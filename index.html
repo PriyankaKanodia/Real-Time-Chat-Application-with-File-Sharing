@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProChat v2.0</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #e5e5e5; display: flex; justify-content: center; height: 100vh; padding: 20px; }
+        
+        .app-container { width: 100%; max-width: 500px; background: #fff; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        
+        .header { background: #007bff; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .header h2 { font-size: 18px; }
+        .status { font-size: 12px; opacity: 0.8; }
+
+        #chat-window { flex: 1; padding: 20px; overflow-y: auto; background: #f8f9fa; display: flex; flex-direction: column; gap: 15px; }
+
+        /* Bubble Styles */
+        .msg-wrapper { display: flex; flex-direction: column; max-width: 80%; }
+        .msg-wrapper.me { align-self: flex-end; align-items: flex-end; }
+        .msg-wrapper.others { align-self: flex-start; align-items: flex-start; }
+
+        .bubble { padding: 10px 15px; border-radius: 15px; font-size: 14px; position: relative; box-shadow: 0 2px 5px rgba(0,0,0,0.05); line-height: 1.5; }
+        .me .bubble { background: #007bff; color: white; border-bottom-right-radius: 2px; }
+        .others .bubble { background: white; color: #333; border-bottom-left-radius: 2px; border: 1px solid #eee; }
+
+        .info { font-size: 10px; margin-top: 4px; color: #888; }
+        .preview-img { max-width: 100%; border-radius: 10px; margin-top: 5px; cursor: pointer; }
+
+        /* Input Area */
+        .input-bar { padding: 20px; background: white; border-top: 1px solid #eee; }
+        .input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+        input[type="text"] { flex: 1; padding: 12px 20px; border-radius: 30px; border: 1px solid #ddd; outline: none; background: #fcfcfc; }
+        .btn { border: none; padding: 10px 20px; border-radius: 30px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        .btn-send { background: #007bff; color: white; }
+        .btn-file { background: #f0f2f5; color: #555; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="header">
+        <div>
+            <h2 id="userNameDisplay">Loading...</h2>
+            <p class="status">● Online</p>
+        </div>
+    </div>
+
+    <div id="chat-window"></div>
+
+    <div class="input-bar">
+        <div class="input-row">
+            <input type="text" id="msgInput" placeholder="Write something..." autocomplete="off">
+            <button class="btn btn-send" onclick="send()">Send</button>
+        </div>
+        <div class="input-row">
+            <input type="file" id="fileIn">
+            <button class="btn btn-file" onclick="upload()">Upload File</button>
+        </div>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    const chat = document.getElementById('chat-window');
+    
+    // User Identity
+    const myName = prompt("What is your name?") || "User_" + Math.floor(Math.random()*1000);
+    document.getElementById('userNameDisplay').innerText = myName;
+
+    function send() {
+        const input = document.getElementById('msgInput');
+        if(input.value.trim()) {
+            socket.emit('chat message', { user: myName, text: input.value });
+            input.value = '';
+        }
+    }
+
+    async function upload() {
+        const file = document.getElementById('fileIn').files[0];
+        if(!file) return alert("Select a file first");
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('userName', myName);
+        await fetch('/upload', { method: 'POST', body: fd });
+        document.getElementById('fileIn').value = '';
+    }
+
+    // Logic to render messages
+    function appendMsg(data, type) {
+        const isMe = data.user === myName || data.sender === myName;
+        const wrapper = document.createElement('div');
+        wrapper.className = `msg-wrapper ${isMe ? 'me' : 'others'}`;
+
+        let content = '';
+        if(type === 'text') {
+            content = `<div class="bubble">${data.text}</div>`;
+        } else {
+            const isImg = data.type.startsWith('image/');
+            content = `<div class="bubble">
+                ${isImg ? `<img src="${data.url}" class="preview-img">` : `📁 ${data.name}`}
+                <br><a href="${data.url}" target="_blank" style="color:inherit; font-size:11px;">View Full</a>
+            </div>`;
+        }
+
+        wrapper.innerHTML = `
+            <span class="info">${isMe ? 'You' : (data.user || data.sender)} • ${data.time || 'now'}</span>
+            ${content}
+        `;
+        chat.appendChild(wrapper);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    socket.on('chat message', d => appendMsg(d, 'text'));
+    socket.on('file message', d => appendMsg(d, 'file'));
+
+    // Allow Enter key to send
+    document.getElementById('msgInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') send(); });
+</script>
+
+</body>
+</html>
